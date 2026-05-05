@@ -52,71 +52,145 @@ top of `sketch.ino`.
 
 ---
 
-## 3. Wiring Diagram (text)
+## 3. Breadboard Layout
+
+A standard 830-point breadboard with two power rails on each side. We
+only use the rails on **one** side of the board — the other side is
+just for spacing.
 
 ```
-  Mega 5V ─┬── DHT11 VCC
-           ├── MQ-2 VCC
-           └── LCD VCC
+  Top rail    (red strip):   +5V from the Mega
+  Bottom rail (blue strip):  GND from the Mega + servo PSU GND
 
-  Mega GND ─┬── DHT11 GND
-            ├── MQ-2 GND
-            ├── LCD GND
-            ├── LED FAN cathode
-            ├── LED HUM cathode
-            ├── Buzzer (−)
-            └── External 5V supply (−)   ← ties the servo PSU into the
-                                            same ground reference
-
-  D7  ── DHT11 DATA   (with 4.7 kΩ to 5V if bare sensor)
-  A0  ── MQ-2 AOUT
-  D20 ── LCD SDA
-  D21 ── LCD SCL
-  D6  ── 220 Ω ── LED FAN anode
-  D5  ── 220 Ω ── LED HUM anode
-  D9  ── Buzzer (+)
-  D10 ── Servo signal (orange/yellow)
-
-  External 5V (+) ── Servo VCC (red)
-  External 5V (−) ── Servo GND (brown) ── Mega GND  (common reference)
+  Mid columns:
+    cols  1– 5   DHT11
+    cols  8–12   MQ-2
+    cols 15–17   FAN LED + 220 Ω
+    cols 19–21   HUM LED + 220 Ω
+    cols 24–25   Buzzer
+    LCD + servo: wired off-board with female-male jumpers
 ```
+
+You can place the LCD and servo directly on the breadboard if you
+have the headers, but it's easier to keep them off-board on flying
+leads — both are bulky.
 
 ---
 
-## 4. Assembly Steps
+## 4. Step-by-Step Wiring
 
-1. **Power off everything.** Wire the common ground bus first — Mega
-   GND and the external 5 V PSU GND must be tied together so the
-   servo's PWM signal has a proper reference.
-2. **Bring up the Mega alone.** Plug it in via USB. Confirm the green
-   PWR LED. Upload `firmware/sketch.ino` (PlatformIO: `pio run -t
-   upload`). Open the serial monitor at 9600 baud — you should see the
-   startup banner and JSON telemetry every 2 s.
-3. **Add the LCD.** With the Mega off, wire VCC/GND/SDA/SCL. Power on.
-   You should see "Room Manager / v1.4.2-mega". If the backlight is on
-   but text is missing, twist the small blue trim-pot on the I²C
-   backpack to set contrast. If the screen is fully blank, your panel
-   is probably at 0x3F instead of 0x27 — flip `LCD_ADDR` in the sketch.
-4. **Add the DHT11.** Wire VCC, GND, DATA → D7. The 4-pin modules
-   already include the pull-up. The LCD's first row should now show
-   real RH and T values instead of the 50/22 defaults.
-5. **Add the MQ-2.** Wire VCC, GND, AOUT → A0. Let it warm up — the
-   real MQ-2 takes **24–48 hours of continuous power** to stabilise; in
-   the first hour the reading drifts a lot. The simple linear ADC →
-   ppm map in the firmware (`GAS_PPM_FULL_SCALE = 1000`) is a
-   placeholder and **must be calibrated** against a known reference
-   (see §6).
-6. **Add the LEDs and resistors.** Each LED gets its anode wired to
-   the Mega pin through a 220 Ω resistor; cathode straight to GND.
-   FAN on D6, HUM on D5. Breathe on the DHT11 — at >60 % RH the FAN
-   LED turns on and stays on until RH drops below 55 % (hysteresis).
-7. **Add the buzzer.** D9 → buzzer (+), GND → buzzer (−). Trigger the
-   alarm by pulling A0 high (jumper to 5 V momentarily) — the buzzer
-   should pulse at ~ 1 Hz.
-8. **Add the servo last.** Power it from the **separate 5 V supply**,
-   tie its ground to the common bus, signal to D10. Mount the horn so
-   that 0° = window closed, 90° = open. The horn rotates whenever the
-   FAN LED is on (`state.windowOpen = fanOn || alarmOn`).
+**Do every step with the Mega unplugged from USB.** Plug it in only
+at step 30. Use the colours below — they make later debugging
+trivial. Each step is one wire.
+
+### A · Power rails (steps 1–4)
+
+| # | From | To | Wire |
+|---|------|----|------|
+| 1 | Mega `5V` | Breadboard `+` rail (top) | red |
+| 2 | Mega `GND` | Breadboard `−` rail (bottom) | black |
+| 3 | `+` rail left end | `+` rail right end | red (jumper across the gap if your board isn't bridged) |
+| 4 | `−` rail left end | `−` rail right end | black |
+
+### B · LCD 16×2 (I²C, 4 pins) — steps 5–8
+
+The LCD has 4 labelled pins on its backpack: `GND`, `VCC`, `SDA`,
+`SCL`. Use female-to-male jumpers.
+
+| # | From | To | Wire |
+|---|------|----|------|
+| 5 | LCD `GND` | Breadboard `−` rail | black |
+| 6 | LCD `VCC` | Breadboard `+` rail | red |
+| 7 | LCD `SDA` | Mega `D20 (SDA)` | blue |
+| 8 | LCD `SCL` | Mega `D21 (SCL)` | yellow |
+
+### C · DHT11 (3-pin module: `+`/`out`/`-`, or 4-pin: VCC/DATA/NC/GND) — steps 9–11
+
+Push the DHT11 module into cols 1–3 (or use jumpers).
+
+| # | From | To | Wire |
+|---|------|----|------|
+| 9 | DHT11 `+` (VCC) | Breadboard `+` rail | red |
+| 10 | DHT11 `-` (GND) | Breadboard `−` rail | black |
+| 11 | DHT11 `out` (DATA) | Mega `D7` | green |
+
+### D · MQ-2 gas sensor (4 pins: VCC, GND, DOUT, AOUT) — steps 12–14
+
+Leave `DOUT` unconnected — the firmware reads the analog channel.
+
+| # | From | To | Wire |
+|---|------|----|------|
+| 12 | MQ-2 `VCC` | Breadboard `+` rail | red |
+| 13 | MQ-2 `GND` | Breadboard `−` rail | black |
+| 14 | MQ-2 `AOUT` | Mega `A0` | yellow |
+
+### E · FAN indicator LED (red) + 220 Ω — steps 15–17
+
+Place the LED with the **long leg (anode) on the left** in cols
+15–16. Place the 220 Ω resistor between col 17 and a free row.
+
+| # | From | To | Wire |
+|---|------|----|------|
+| 15 | LED FAN cathode (short leg) | Breadboard `−` rail | black |
+| 16 | LED FAN anode (long leg) | One end of 220 Ω resistor | (legs touching on the breadboard, no jumper needed) |
+| 17 | Other end of 220 Ω | Mega `D6` | green |
+
+### F · HUM indicator LED (blue) + 220 Ω — steps 18–20
+
+Same pattern, two columns over.
+
+| # | From | To | Wire |
+|---|------|----|------|
+| 18 | LED HUM cathode | Breadboard `−` rail | black |
+| 19 | LED HUM anode | One end of 220 Ω resistor | (touching) |
+| 20 | Other end of 220 Ω | Mega `D5` | green |
+
+### G · Active piezo buzzer — steps 21–22
+
+The buzzer's `+` is the longer leg (or marked with a `+` symbol on
+top).
+
+| # | From | To | Wire |
+|---|------|----|------|
+| 21 | Buzzer `+` | Mega `D9` | purple |
+| 22 | Buzzer `−` | Breadboard `−` rail | black |
+
+### H · Servo SG90 — steps 23–26
+
+**Critical:** the servo is powered from the **external 5 V supply**,
+not the Mega. You only share the *signal* with the Mega; the power
+and ground come from the phone-charger PSU.
+
+| # | From | To | Wire |
+|---|------|----|------|
+| 23 | Servo brown (GND) | External 5 V PSU `−` | black |
+| 24 | Servo red (VCC) | External 5 V PSU `+` | red |
+| 25 | Servo orange/yellow (signal) | Mega `D10` | orange |
+| 26 | External 5 V PSU `−` | Breadboard `−` rail | black (this ties the two grounds together — without it the servo will twitch) |
+
+### I · Bring-up — steps 27–32
+
+| # | Action |
+|---|--------|
+| 27 | Double-check **all** GND lines reach the same `−` rail. |
+| 28 | Confirm no wire goes from the Mega `5V` pin to the servo. |
+| 29 | Plug the external 5 V supply into the wall. The servo should snap to 0° (closed position). |
+| 30 | Plug the Mega's USB into the PC. Green PWR LED on the Mega lights up. |
+| 31 | LCD shows `Room Manager` on row 0, `v1.4.2-mega` on row 1, then switches to `T:.. H:.. G:..` after ~2 s. |
+| 32 | If the LCD backlight is on but text is missing, turn the small blue trim-pot on the I²C backpack until the characters appear. If the screen is completely dead, your backpack is at `0x3F` — flip `LCD_ADDR` in `sketch.ino` and re-flash. |
+
+### J · Smoke test — steps 33–36
+
+| # | Action | Expected |
+|---|--------|----------|
+| 33 | Breathe on the DHT11 for 5 s. | Humidity rises past 60 → red FAN LED on, servo rotates to 90° (open). |
+| 34 | Stop breathing, wait. | Humidity falls below 55 → FAN LED off, servo back to 0°. |
+| 35 | With sensor in dry room (or no breath), wait. | If RH < 40, blue HUM LED on. |
+| 36 | Hold a lit match ~30 cm from the MQ-2. | Buzzer pulses at ~1 Hz, FAN LED forced on, servo opens. Reading on row 0 climbs past 300 ppm. |
+
+If any step misbehaves, open the serial monitor at 9600 baud — the
+firmware emits a JSON line every 2 s with all four state booleans
+plus the raw readings.
 
 ---
 
