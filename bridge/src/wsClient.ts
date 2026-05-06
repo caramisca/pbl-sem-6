@@ -101,7 +101,7 @@ export class WsClient {
           'topic' in parsed &&
           (parsed as { topic: unknown }).topic === 'ingest-error'
         ) {
-          this.onLog(`[bridge] backend rejected ingest: ${JSON.stringify((parsed as { payload: unknown }).payload)}`);
+          this.onLog(`[bridge] backend rejected ingest: ${JSON.stringify((parsed as unknown as { payload: unknown }).payload)}`);
         }
       } catch {
         /* ignore non-JSON frames */

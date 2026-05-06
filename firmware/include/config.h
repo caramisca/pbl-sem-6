@@ -11,9 +11,10 @@
 // =====================================================================
 
 // ---- Pin map (Arduino Mega 2560) -------------------------------------
-// DHT22 single-wire data. Needs a 4.7–10 kΩ pull-up to 5 V on real HW.
-// Wokwi handles the pull-up internally on the wokwi-dht22 part.
-#define PIN_DHT          7
+// DHT11 single-wire data — pin 22 (plain digital on the Mega's 22-53 header,
+// pure GPIO, no timer, no interrupt, no conflict with Servo/tone/I2C).
+// Needs a 4.7–10 kΩ pull-up to 5 V on real HW.
+#define PIN_DHT          22
 
 // MQ-2 analog out → A0 (10-bit ADC, 0..1023).
 // In Wokwi this pin is driven by a potentiometer that simulates rising
@@ -42,15 +43,13 @@ constexpr float HUMIDITY_HIGH      = 60.0f;  // %RH — fan ON
 constexpr float HUMIDITY_HIGH_OFF  = 55.0f;  // %RH — fan OFF
 constexpr float HUMIDITY_LOW       = 40.0f;  // %RH — humidifier ON
 constexpr float HUMIDITY_LOW_OFF   = 45.0f;  // %RH — humidifier OFF
-constexpr int   GAS_DANGER_PPM     = 300;    // ppm — alarm ON
-constexpr int   GAS_DANGER_OFF_PPM = 270;    // ppm — alarm OFF (~10% below)
+constexpr float GAS_DANGER_PCT     = 30.0f;  // %   — alarm ON  (~300 ppm equiv)
+constexpr float GAS_DANGER_OFF_PCT = 27.0f;  // %   — alarm OFF (~270 ppm equiv)
 constexpr float TEMP_HIGH          = 26.0f;  // °C  — warning only
+constexpr float TEMP_WINDOW_ON     = 24.0f;  // °C  — servo opens window
 
-// MQ-2 analog → ppm scaling for the simulator. The real sensor is
-// non-linear (Rs/R0 vs ppm) and needs calibration; here we use a clean
-// linear map so the potentiometer span covers the alarm threshold.
-// AVR ADC is 10-bit → 0..1023 → 0..1000 ppm.
-constexpr int   GAS_PPM_FULL_SCALE = 1000;
+// ADC full scale for MQ-2 percent conversion.
+// AVR ADC is 10-bit → 0..1023 → maps to 0.0–100.0 %.
 constexpr int   ADC_FULL_SCALE     = 1023;
 
 // EMA smoothing factor for the gas reading: new = α·sample + (1−α)·prev.

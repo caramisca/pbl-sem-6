@@ -14,7 +14,7 @@
       "attrs": { "pins": "i2c" } },
 
     { "type": "wokwi-led", "id": "ledFan", "top": 250, "left": -180,
-      "attrs": { "color": "red", "label": "FAN" } },
+      "attrs": { "color": "green", "label": "FAN" } },
     { "type": "wokwi-led", "id": "ledHum", "top": 250, "left": -80,
       "attrs": { "color": "blue", "label": "HUM" } },
 

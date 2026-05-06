@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "room-manager": "file:..",
     "serialport": "^12.0.0",
     "ws": "^8.18.0"
   },

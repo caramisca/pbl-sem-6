@@ -34,7 +34,7 @@ export function buildRouter(
   });
 
   router.get('/telemetry/:deviceId', (req: Request, res: Response) => {
-    const { deviceId } = req.params;
+    const deviceId = req.params['deviceId'] as string;
     const device = store.getDevice(deviceId);
     if (!device) {
       res.status(404).json({ error: 'device_not_found', deviceId });

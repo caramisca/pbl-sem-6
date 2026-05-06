@@ -32,9 +32,10 @@
 // =====================================================================
 
 // ---- Pin map (Arduino Mega 2560) -------------------------------------
-// DHT11 single-wire data. Needs a 4.7–10 kΩ pull-up to 5 V on real HW.
-// Wokwi handles the pull-up internally on the dht part.
-#define PIN_DHT          7
+// DHT11 single-wire data — pin 22 (plain digital on the Mega's 22-53 header,
+// pure GPIO, no timer, no interrupt, no conflict with Servo/tone/I2C).
+// Needs a 4.7–10 kΩ pull-up to 5 V if using a bare 3-pin sensor.
+#define PIN_DHT          22
 
 // MQ-2 analog out → A0 (10-bit ADC, 0..1023).
 // In Wokwi this pin is driven by a potentiometer that simulates rising
@@ -71,15 +72,13 @@ constexpr float HUMIDITY_HIGH      = 60.0f;  // %RH — fan ON
 constexpr float HUMIDITY_HIGH_OFF  = 55.0f;  // %RH — fan OFF
 constexpr float HUMIDITY_LOW       = 40.0f;  // %RH — humidifier ON
 constexpr float HUMIDITY_LOW_OFF   = 45.0f;  // %RH — humidifier OFF
-constexpr int   GAS_DANGER_PPM     = 300;    // ppm — alarm ON
-constexpr int   GAS_DANGER_OFF_PPM = 270;    // ppm — alarm OFF (~10% below)
+constexpr float GAS_DANGER_PCT     = 30.0f;  // %   — alarm ON  (~300 ppm equiv)
+constexpr float GAS_DANGER_OFF_PCT = 27.0f;  // %   — alarm OFF (~270 ppm equiv)
 constexpr float TEMP_HIGH          = 26.0f;  // °C  — warning only
+constexpr float TEMP_WINDOW_ON     = 24.0f;  // °C  — servo opens window
 
-// MQ-2 analog → ppm scaling for the simulator. The real sensor is
-// non-linear (Rs/R0 vs ppm) and needs calibration; here we use a clean
-// linear map so the potentiometer span covers the alarm threshold.
-// AVR ADC is 10-bit → 0..1023 → 0..1000 ppm.
-constexpr int   GAS_PPM_FULL_SCALE = 1000;
+// ADC full scale for MQ-2 percent conversion.
+// AVR ADC is 10-bit → 0..1023 → maps to 0.0–100.0 %.
 constexpr int   ADC_FULL_SCALE     = 1023;
 
 // EMA smoothing factor for the gas reading: new = α·sample + (1−α)·prev.
@@ -111,7 +110,7 @@ Servo windowServo;
 struct State {
   float humidity      = 50.0f;
   float temperature   = 22.0f;
-  int   gasPpm        = 0;
+  float gasPct        = 0.0f;   // 0.0 – 100.0 %
   float gasEma        = 0.0f;
   bool  fanOn         = false;
   bool  humidifierOn  = false;
@@ -131,12 +130,21 @@ bool          buzzerActive       = false;
 float lastValidHumidity = 50.0f;
 float lastValidTemp     = 22.0f;
 
+// MQ-2 needs ~60 s heater warm-up before readings are reliable.
+// During warm-up the gas alarm is suppressed and LCD shows "WARM".
+constexpr unsigned long GAS_WARMUP_MS = 60000UL;
+bool gasReady = false;
+int  gasRawAdc = 0; // stored for JSON diagnostics
+
 // =====================================================================
 // SENSE
 // =====================================================================
 void readDht() {
-  const float h = dht.readHumidity();
-  const float t = dht.readTemperature();
+  // force=true bypasses the 2000 ms MIN_INTERVAL cache.
+  // Without it, if the loop fires 1 ms early the library returns the last
+  // NaN result instead of attempting a fresh read.
+  const float h = dht.readHumidity(true);
+  const float t = dht.readTemperature(false, true);
   state.dhtValid = !isnan(h) && !isnan(t);
   if (state.dhtValid) {
     lastValidHumidity = h;
@@ -149,13 +157,14 @@ void readDht() {
   }
 }
 
-void readGas() {
-  const int raw = analogRead(PIN_GAS); // 0..1023 on AVR 10-bit ADC
-  const int sample = (int)((float)raw * GAS_PPM_FULL_SCALE / ADC_FULL_SCALE);
+void readGas(unsigned long now) {
+  gasRawAdc = analogRead(PIN_GAS); // 0..1023 on AVR 10-bit ADC
+  const float sample = (float)gasRawAdc * 100.0f / ADC_FULL_SCALE; // → 0.0–100.0 %
   // Exponential moving average to suppress sensor noise / cross-sensitivity.
-  if (state.gasEma == 0.0f) state.gasEma = (float)sample;
+  if (state.gasEma == 0.0f) state.gasEma = sample;
   state.gasEma = GAS_EMA_ALPHA * sample + (1.0f - GAS_EMA_ALPHA) * state.gasEma;
-  state.gasPpm = (int)state.gasEma;
+  state.gasPct = state.gasEma;
+  if (!gasReady && now >= GAS_WARMUP_MS) gasReady = true;
 }
 
 // =====================================================================
@@ -173,16 +182,19 @@ void applyHysteresis() {
   // Mutual exclusion guard — fan wins (mold/safety > comfort).
   if (state.fanOn && state.humidifierOn) state.humidifierOn = false;
 
-  // Gas alarm
-  if (!state.alarmOn && state.gasPpm > GAS_DANGER_PPM)              state.alarmOn = true;
-  else if ( state.alarmOn && state.gasPpm < GAS_DANGER_OFF_PPM)     state.alarmOn = false;
+  // Gas alarm — only after warm-up period.
+  if (gasReady) {
+    if (!state.alarmOn && state.gasPct > GAS_DANGER_PCT)            state.alarmOn = true;
+    else if ( state.alarmOn && state.gasPct < GAS_DANGER_OFF_PCT)   state.alarmOn = false;
+  } else {
+    state.alarmOn = false; // never alarm during warm-up
+  }
 
   // Force-vent on alarm: get the air moving regardless of RH.
   if (state.alarmOn) state.fanOn = true;
 
-  // Window follows ventilation demand — open whenever the fan runs
-  // (high RH) or the gas alarm is latched.
-  state.windowOpen = state.fanOn || state.alarmOn;
+  // Window: open when fan runs, alarm is active, OR temperature hits 24 °C.
+  state.windowOpen = state.fanOn || state.alarmOn || (state.temperature >= TEMP_WINDOW_ON);
 }
 
 // =====================================================================
@@ -227,8 +239,13 @@ void renderDisplay() {
   lcd.print(F(" H:"));
   lcd.print((int)state.humidity);
   lcd.print(F(" G:"));
-  lcd.print(state.gasPpm);
-  lcd.print(F("    ")); // pad to 16 (covers shrinking gas value)
+  if (!gasReady) {
+    lcd.print(F("WARM"));
+  } else {
+    lcd.print((int)state.gasPct);
+    lcd.print('%');
+    lcd.print(F("  ")); // pad
+  }
 
   // Row 1 — actuator state, single-digit booleans + DHT-fault marker.
   lcd.setCursor(0, 1);
@@ -276,7 +293,63 @@ void setup() {
   lcd.print(F(FW_VERSION));
 
   // Sensors
-  dht.begin();
+  dht.begin(); // default 55 µs pull time — 100 µs overshoots the sensor's 80 µs response pulse
+  delay(1500); // DHT11 needs >1 s after power-on before first read
+
+  // --- Startup DHT probe (5 attempts, prints each result) -----------
+  Serial.println(F("--- DHT11 probe (data wire -> pin 22) ---"));
+
+  // Check DATA line at rest — must be HIGH.
+  pinMode(PIN_DHT, INPUT_PULLUP);
+  delay(10);
+  int dataAtRest = digitalRead(PIN_DHT);
+  Serial.print(F("  DATA line at rest: "));
+  Serial.println(dataAtRest ? F("HIGH (good — pin connected, pull-up works)") : F("LOW  -> VCC/GND swapped or short!"));
+
+  // Raw watch: drive pin LOW for 25 ms (host start), release, watch 200 µs for
+  // sensor to pull it LOW in response. A healthy DHT11 MUST respond here.
+  Serial.print(F("  Raw sensor response test: "));
+  pinMode(PIN_DHT, OUTPUT);
+  digitalWrite(PIN_DHT, LOW);
+  delay(25);
+  pinMode(PIN_DHT, INPUT_PULLUP);
+  delayMicroseconds(50);
+  bool sensorResponded = false;
+  for (int t = 0; t < 500; t++) {  // watch up to 500 µs
+    if (digitalRead(PIN_DHT) == LOW) { sensorResponded = true; break; }
+    delayMicroseconds(1);
+  }
+  Serial.println(sensorResponded ? F("RESPONDED (sensor alive)") : F("NO RESPONSE -> sensor dead or DATA wire not reaching sensor"));
+
+  for (int i = 0; i < 3; i++) {
+    delay(2100);
+    float h = dht.readHumidity(true);         // force=true
+    float t2 = dht.readTemperature(false, true); // force=true
+    Serial.print(F("  attempt ")); Serial.print(i + 1);
+    if (isnan(h) || isnan(t2)) {
+      Serial.println(F(" -> FAILED"));
+    } else {
+      Serial.print(F(" -> OK  T=")); Serial.print(t2);
+      Serial.print(F("C  H=")); Serial.print(h); Serial.println('%');
+    }
+  }
+
+  // --- MQ-2 wiring check (heater needs power on VCC+GND) ------------
+  Serial.println(F("--- MQ-2 probe (scanning A0-A5) ---"));
+  {
+    // Scan all 6 analog pins — the one that is NOT near 1023 is where AO landed.
+    const char* pinNames[] = {"A0","A1","A2","A3","A4","A5"};
+    const int   pins[]     = { A0,  A1,  A2,  A3,  A4,  A5 };
+    for (int i = 0; i < 6; i++) {
+      int v = analogRead(pins[i]);
+      Serial.print(F("  ")); Serial.print(pinNames[i]);
+      Serial.print(F("=")); Serial.print(v);
+      if (v < 950) Serial.print(F("  <-- AO signal here!"));
+      Serial.println();
+    }
+  }
+  Serial.println(F("--- probe done ---"));
+
   pinMode(PIN_GAS, INPUT);
 }
 
@@ -288,16 +361,19 @@ void loop() {
   if (now - lastSampleAt >= SAMPLE_INTERVAL_MS) {
     lastSampleAt = now;
     readDht();
-    readGas();
+    readGas(now);
     applyHysteresis();
     renderDisplay();
 
     // JSON line per sample — consumed by the Node serial bridge that
     // forwards readings to the backend's WebSocket.
     Serial.print(F("{\"deviceId\":\"")); Serial.print(F(DEVICE_ID));
-    Serial.print(F("\",\"humidity\":"));    Serial.print(state.humidity, 1);
+    Serial.print(F("\",\"dhtValid\":"));    Serial.print(state.dhtValid ? F("true") : F("false"));
+    Serial.print(F(",\"humidity\":"));      Serial.print(state.humidity, 1);
     Serial.print(F(",\"temperature\":"));   Serial.print(state.temperature, 1);
-    Serial.print(F(",\"gas\":"));           Serial.print(state.gasPpm);
+    Serial.print(F(",\"gasPct\":"));        Serial.print(state.gasPct, 1);
+    Serial.print(F(",\"gasRaw\":"));         Serial.print(gasRawAdc);
+    Serial.print(F(",\"gasReady\":"));       Serial.print(gasReady ? F("true") : F("false"));
     Serial.print(F(",\"fanOn\":"));         Serial.print(state.fanOn ? F("true") : F("false"));
     Serial.print(F(",\"humidifierOn\":"));  Serial.print(state.humidifierOn ? F("true") : F("false"));
     Serial.print(F(",\"alarmOn\":"));       Serial.print(state.alarmOn ? F("true") : F("false"));
