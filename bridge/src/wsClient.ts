@@ -33,6 +33,8 @@ export class WsClient {
   constructor(
     private readonly url: string,
     private readonly onLog: (msg: string) => void,
+    private readonly onThresholds?: (payload: Record<string, unknown>) => void,
+    private readonly onCommand?: (payload: Record<string, unknown>) => void,
   ) {}
 
   start(): void {
@@ -95,13 +97,27 @@ export class WsClient {
     sock.on('message', (raw: WebSocket.RawData) => {
       try {
         const parsed: unknown = JSON.parse(raw.toString());
-        if (
-          parsed &&
-          typeof parsed === 'object' &&
-          'topic' in parsed &&
-          (parsed as { topic: unknown }).topic === 'ingest-error'
-        ) {
-          this.onLog(`[bridge] backend rejected ingest: ${JSON.stringify((parsed as unknown as { payload: unknown }).payload)}`);
+        if (parsed && typeof parsed === 'object') {
+          const env = parsed as { topic?: unknown; payload?: unknown };
+          if (
+            env.topic === 'ingest-error'
+          ) {
+            this.onLog(`[bridge] backend rejected ingest: ${JSON.stringify((parsed as unknown as { payload: unknown }).payload)}`);
+          } else if (
+            env.topic === 'roommanager/thresholds' &&
+            this.onThresholds &&
+            env.payload &&
+            typeof env.payload === 'object'
+          ) {
+            this.onThresholds(env.payload as Record<string, unknown>);
+          } else if (
+            env.topic === 'roommanager/command' &&
+            this.onCommand &&
+            env.payload &&
+            typeof env.payload === 'object'
+          ) {
+            this.onCommand(env.payload as Record<string, unknown>);
+          }
         }
       } catch {
         /* ignore non-JSON frames */

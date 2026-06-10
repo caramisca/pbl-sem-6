@@ -67,17 +67,19 @@ constexpr int WINDOW_OPEN_DEG   = 90;  // limit travel to a 90-degree sweep
 // owns those pins automatically on the Mega).
 
 // ---- Thresholds (hysteresis bands) -----------------------------------
-// Match the report exactly: fan 60/55, humidifier 40/45, gas 300/270.
-constexpr float HUMIDITY_HIGH      = 60.0f;  // %RH — fan ON
-constexpr float HUMIDITY_HIGH_OFF  = 55.0f;  // %RH — fan OFF
-constexpr float HUMIDITY_LOW       = 40.0f;  // %RH — humidifier ON
-constexpr float HUMIDITY_LOW_OFF   = 45.0f;  // %RH — humidifier OFF
-constexpr float TEMP_FAN_ON        = 24.0f;  // °C  — temperature fan ON (hysteresis upper)
-constexpr float TEMP_FAN_OFF       = 23.0f;  // °C  — temperature fan OFF (hysteresis lower)
-constexpr float GAS_DANGER_PCT     = 20.0f;  // %   — alarm ON  (~20%)
-constexpr float GAS_DANGER_OFF_PCT = 19.0f;  // %   — alarm OFF (hysteresis)
-constexpr float TEMP_HIGH          = 26.0f;  // °C  — warning only
-constexpr float TEMP_WINDOW_ON     = 24.0f;  // °C  — servo opens window
+// Runtime-configurable — stored in RAM, updated via serial commands
+// from the bridge. Defaults match the report: fan 60/55, humidifier
+// 40/45, gas 30/27 % (=300/270 ppm), temp 26 °C.
+float HUMIDITY_HIGH      = 60.0f;  // %RH — fan ON
+float HUMIDITY_HIGH_OFF  = 55.0f;  // %RH — fan OFF
+float HUMIDITY_LOW       = 40.0f;  // %RH — humidifier ON
+float HUMIDITY_LOW_OFF   = 45.0f;  // %RH — humidifier OFF
+float TEMP_FAN_ON        = 24.0f;  // °C  — temperature fan ON
+float TEMP_FAN_OFF       = 23.0f;  // °C  — temperature fan OFF
+float GAS_DANGER_PCT     = 30.0f;  // %   — alarm ON  (≈300 ppm)
+float GAS_DANGER_OFF_PCT = 27.0f;  // %   — alarm OFF (≈270 ppm, hysteresis)
+float TEMP_HIGH          = 26.0f;  // °C  — warning only
+float TEMP_WINDOW_ON     = 24.0f;  // °C  — servo opens window
 
 // ADC full scale for MQ-2 percent conversion.
 // AVR ADC is 10-bit → 0..1023 → maps to 0.0–100.0 %.
@@ -135,6 +137,17 @@ float lastValidTemp     = 22.0f;
 // MQ-2 readings are used immediately on real hardware.
 bool gasReady = true;
 int  gasRawAdc = 0; // stored for JSON diagnostics
+
+// ---- Test state --------------------------------------------------------
+// Triggered by serial commands from the bridge; temporarily override
+// actuator outputs so the user can verify wiring from the web dashboard.
+// TEST_NONE → normal control. TEST_LED → blink both indicator LEDs.
+// TEST_BUZZER → pulse the piezo buzzer.
+enum TestKind { TEST_NONE, TEST_LED, TEST_BUZZER };
+TestKind testActive     = TEST_NONE;
+unsigned long testStart = 0;
+constexpr unsigned long TEST_BLINK_MS = 300;  // on/off phase duration
+constexpr unsigned long TEST_DURATION_MS = 2000; // total test length
 
 // =====================================================================
 // SENSE
@@ -203,31 +216,68 @@ void applyHysteresis() {
 // ACT
 // =====================================================================
 void driveActuators(unsigned long now) {
-  digitalWrite(PIN_FAN,        state.fanOn        ? HIGH : LOW);
-  digitalWrite(PIN_HUMIDIFIER, state.humidifierOn ? HIGH : LOW);
+  // ── Servo always follows normal logic (window position) ──────────
   {
     const int windowAngle = state.windowOpen ? WINDOW_OPEN_DEG : WINDOW_CLOSED_DEG;
     windowServo.write(constrain(windowAngle, WINDOW_CLOSED_DEG, WINDOW_OPEN_DEG));
   }
 
-  // Buzzer — pulse with melodic "singing" pattern while the alarm latch is set.
-  if (state.alarmOn) {
-    if (now - lastBuzzerToggleAt > BUZZER_PULSE_MS) {
-      lastBuzzerToggleAt = now;
-      buzzerActive = !buzzerActive;
-      if (buzzerActive) {
-        // Melodic rising tone pattern for "singing" effect
-        int pitchVariation = (now / 200) % 4; // 4-step pitch pattern
-        int basePitch = BUZZER_FREQ_HZ;
-        int pitches[] = {basePitch, basePitch + 200, basePitch + 400, basePitch + 300};
-        tone(PIN_BUZZER, pitches[pitchVariation]);
+  // ── LED test override ────────────────────────────────────────────
+  if (testActive == TEST_LED) {
+    unsigned long elapsed = now - testStart;
+    if (elapsed >= TEST_DURATION_MS) {
+      // Test finished — restore normal control and send ACK.
+      testActive = TEST_NONE;
+      digitalWrite(PIN_FAN, LOW);
+      digitalWrite(PIN_HUMIDIFIER, LOW);
+      Serial.println(F("{\"ack\":\"test-led\",\"status\":\"completed\"}"));
+    } else {
+      bool ledOn = ((elapsed / TEST_BLINK_MS) % 2) == 0;
+      digitalWrite(PIN_FAN,        ledOn ? HIGH : LOW);
+      digitalWrite(PIN_HUMIDIFIER, ledOn ? HIGH : LOW);
+    }
+  } else {
+    // Normal LED control
+    digitalWrite(PIN_FAN,        state.fanOn        ? HIGH : LOW);
+    digitalWrite(PIN_HUMIDIFIER, state.humidifierOn ? HIGH : LOW);
+  }
+
+  // ── Buzzer test override ─────────────────────────────────────────
+  if (testActive == TEST_BUZZER) {
+    unsigned long elapsed = now - testStart;
+    if (elapsed >= TEST_DURATION_MS) {
+      testActive = TEST_NONE;
+      noTone(PIN_BUZZER);
+      buzzerActive = false;
+      Serial.println(F("{\"ack\":\"test-buzzer\",\"status\":\"completed\"}"));
+    } else {
+      bool beepOn = ((elapsed / TEST_BLINK_MS) % 2) == 0;
+      if (beepOn) {
+        tone(PIN_BUZZER, BUZZER_FREQ_HZ);
       } else {
         noTone(PIN_BUZZER);
       }
     }
-  } else if (buzzerActive) {
-    buzzerActive = false;
-    noTone(PIN_BUZZER);
+  } else {
+    // Normal buzzer — pulse with melodic "singing" pattern while the alarm latch is set.
+    if (state.alarmOn) {
+      if (now - lastBuzzerToggleAt > BUZZER_PULSE_MS) {
+        lastBuzzerToggleAt = now;
+        buzzerActive = !buzzerActive;
+        if (buzzerActive) {
+          // Melodic rising tone pattern for "singing" effect
+          int pitchVariation = (now / 200) % 4; // 4-step pitch pattern
+          int basePitch = BUZZER_FREQ_HZ;
+          int pitches[] = {basePitch, basePitch + 200, basePitch + 400, basePitch + 300};
+          tone(PIN_BUZZER, pitches[pitchVariation]);
+        } else {
+          noTone(PIN_BUZZER);
+        }
+      }
+    } else if (buzzerActive) {
+      buzzerActive = false;
+      noTone(PIN_BUZZER);
+    }
   }
 }
 
@@ -243,6 +293,21 @@ void driveActuators(unsigned long now) {
 // decimal place vs the OLED build.
 // =====================================================================
 void renderDisplay() {
+  // ── Test mode overlay ───────────────────────────────────────────
+  if (testActive != TEST_NONE) {
+    lcd.setCursor(0, 0);
+    if (testActive == TEST_LED) {
+      lcd.print(F("  HARDWARE TEST  "));
+      lcd.setCursor(0, 1);
+      lcd.print(F("  LED BLINK     "));
+    } else {
+      lcd.print(F("  HARDWARE TEST  "));
+      lcd.setCursor(0, 1);
+      lcd.print(F("  BUZZER BEEP   "));
+    }
+    return;
+  }
+
   // Row 0 — readings. We rewrite the row in-place with trailing spaces
   // instead of lcd.clear() so the panel doesn't flicker every 2 s.
   lcd.setCursor(0, 0);
@@ -266,6 +331,87 @@ void renderDisplay() {
   lcd.print(F(" W:"));
   lcd.print(state.windowOpen   ? '1' : '0');
   lcd.print(state.dhtValid ? ' ' : '*'); // 16th cell flags a bad DHT read
+}
+
+// =====================================================================
+// SERIAL COMMAND PARSER — accepts JSON threshold updates from bridge
+//
+// Expected format (one JSON object per line):
+//   {"cmd":"set-thresholds","humidityHigh":60,"humidityHighOff":55,...}
+//
+// Gas values arrive in ppm-equivalent (backend convention) and are
+// converted to percent (÷10) for the firmware's internal logic.
+// =====================================================================
+void checkSerialCommands() {
+  static String serialBuf = "";
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (serialBuf.length() == 0) continue;
+      // Attempt JSON parse
+      // We use a lightweight manual parser because ArduinoJson isn't
+      // available on this build target.
+      const String& s = serialBuf;
+      // ── Test commands from web dashboard ─────────────────────────
+      if (s.startsWith("{\"cmd\":\"test-led\"")) {
+        testActive = TEST_LED;
+        testStart = millis();
+        Serial.println(F("{\"ack\":\"test-led\",\"status\":\"started\"}"));
+      }
+      else if (s.startsWith("{\"cmd\":\"test-buzzer\"")) {
+        testActive = TEST_BUZZER;
+        testStart = millis();
+        Serial.println(F("{\"ack\":\"test-buzzer\",\"status\":\"started\"}"));
+      }
+      else if (s.startsWith("{\"cmd\":\"set-thresholds\"")) {
+        // Extract numeric values for each known key
+        auto getFloat = [&](const char* key, float deflt) -> float {
+          int pos = s.indexOf(key);
+          if (pos < 0) return deflt;
+          // skip past "key":
+          pos += strlen(key) + 2; // key + :"
+          if (pos >= (int)s.length()) return deflt;
+          const char* numStart = s.c_str() + pos; // after "key": → first digit of value
+          // move to the first digit/dot
+          while (*numStart && *numStart != ':' && !isdigit(*numStart) && *numStart != '-' && *numStart != '.')
+            numStart++;
+          return atof(numStart);
+        };
+
+        HUMIDITY_HIGH      = getFloat("humidityHigh",      HUMIDITY_HIGH);
+        HUMIDITY_HIGH_OFF  = getFloat("humidityHighOff",   HUMIDITY_HIGH_OFF);
+        HUMIDITY_LOW       = getFloat("humidityLow",       HUMIDITY_LOW);
+        HUMIDITY_LOW_OFF   = getFloat("humidityLowOff",    HUMIDITY_LOW_OFF);
+        TEMP_HIGH          = getFloat("tempHigh",          TEMP_HIGH);
+
+        // Gas thresholds arrive in ppm from backend; firmware uses % (÷10)
+        float gasDanger    = getFloat("gasDanger",    GAS_DANGER_PCT * 10.0f);
+        float gasDangerOff = getFloat("gasDangerOff", GAS_DANGER_OFF_PCT * 10.0f);
+        GAS_DANGER_PCT     = gasDanger / 10.0f;
+        GAS_DANGER_OFF_PCT = gasDangerOff / 10.0f;
+
+        // Send acknowledgment so the bridge knows it was applied
+        Serial.print(F("{\"ack\":\"thresholds\",\"humidityHigh\":"));
+        Serial.print(HUMIDITY_HIGH, 0);
+        Serial.print(F(",\"humidityHighOff\":"));
+        Serial.print(HUMIDITY_HIGH_OFF, 0);
+        Serial.print(F(",\"humidityLow\":"));
+        Serial.print(HUMIDITY_LOW, 0);
+        Serial.print(F(",\"humidityLowOff\":"));
+        Serial.print(HUMIDITY_LOW_OFF, 0);
+        Serial.print(F(",\"gasDanger\":"));
+        Serial.print(GAS_DANGER_PCT * 10.0f, 0);
+        Serial.print(F(",\"gasDangerOff\":"));
+        Serial.print(GAS_DANGER_OFF_PCT * 10.0f, 0);
+        Serial.print(F(",\"tempHigh\":"));
+        Serial.print(TEMP_HIGH, 0);
+        Serial.println(F("}"));
+      }
+      serialBuf = "";
+    } else {
+      if (serialBuf.length() < 256) serialBuf += c;
+    }
+  }
 }
 
 // =====================================================================
@@ -386,6 +532,9 @@ void loop() {
   const unsigned long now = millis();
   state.uptimeS = now / 1000UL;
 
+  // Check for serial threshold updates from the bridge
+  checkSerialCommands();
+
   // Sense + decide + render at the sample cadence
   if (now - lastSampleAt >= SAMPLE_INTERVAL_MS) {
     lastSampleAt = now;
@@ -401,6 +550,7 @@ void loop() {
     Serial.print(F(",\"humidity\":"));      Serial.print(state.humidity, 1);
     Serial.print(F(",\"temperature\":"));   Serial.print(state.temperature, 1);
     Serial.print(F(",\"gasPct\":"));        Serial.print(state.gasPct, 1);
+    Serial.print(F(",\"gas\":"));            Serial.print(state.gasPct * 10.0f, 0);
     Serial.print(F(",\"gasRaw\":"));         Serial.print(gasRawAdc);
     Serial.print(F(",\"gasReady\":"));       Serial.print(gasReady ? F("true") : F("false"));
     Serial.print(F(",\"fanOn\":"));         Serial.print(state.fanOn ? F("true") : F("false"));

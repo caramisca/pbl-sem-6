@@ -11,6 +11,7 @@ export interface SerialReaderOptions {
   baud: number;
   onLine: (line: string) => void;
   onLog: (msg: string) => void;
+  onAck?: (line: string) => void;
 }
 
 const REOPEN_BACKOFF_MS = 2_000;
@@ -83,18 +84,34 @@ export class SerialReader {
     });
   }
 
+  /** Write raw data to the serial port. Returns false if port is not open. */
+  write(data: string): boolean {
+    if (!this.port || !this.port.isOpen) return false;
+    try {
+      this.port.write(data);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private feed(chunk: Buffer): void {
     this.buffer += chunk.toString('utf8');
-    // Split on \n, keep the trailing partial frame for the next chunk.
     let nl = this.buffer.indexOf('\n');
     while (nl !== -1) {
       const raw = this.buffer.slice(0, nl);
       this.buffer = this.buffer.slice(nl + 1);
       const line = raw.replace(/\r$/, '').trim();
-      if (line.length > 0) this.opts.onLine(line);
+      if (line.length > 0) {
+        // If the line is an ACK from firmware, route to onAck callback
+        if (line.startsWith('{"ack"') && this.opts.onAck) {
+          this.opts.onAck(line);
+        } else {
+          this.opts.onLine(line);
+        }
+      }
       nl = this.buffer.indexOf('\n');
     }
-    // Cap the buffer so a misbehaving port can't drift into OOM.
     if (this.buffer.length > 16_384) this.buffer = '';
   }
 

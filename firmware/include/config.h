@@ -38,16 +38,18 @@
 // owns those pins automatically on the Mega).
 
 // ---- Thresholds (hysteresis bands) -----------------------------------
+// Runtime-configurable via serial commands from the bridge.
+// These are the factory defaults — they can be overridden at runtime.
 // Match the report exactly: fan 60/55, humidifier 40/45, gas 300/270.
-constexpr float HUMIDITY_HIGH      = 60.0f;  // %RH — fan ON
-constexpr float HUMIDITY_HIGH_OFF  = 55.0f;  // %RH — fan OFF
-constexpr float HUMIDITY_LOW       = 40.0f;  // %RH — humidifier ON
-constexpr float HUMIDITY_LOW_OFF   = 45.0f;  // %RH — humidifier OFF
-constexpr float TEMP_FAN_ON        = 24.0f;  // °C  — temperature fan ON (hysteresis upper)
-constexpr float TEMP_FAN_OFF       = 23.0f;  // °C  — temperature fan OFF (hysteresis lower)
-constexpr float GAS_DANGER_PCT     = 10.0f;  // %   — alarm ON  (~20%)
-constexpr float GAS_DANGER_OFF_PCT = 9.0f;  // %   — alarm OFF (hysteresis)
-constexpr float TEMP_HIGH          = 26.0f;  // °C  — warning only
+#define DEFAULT_HUMIDITY_HIGH      60.0f  // %RH — fan ON
+#define DEFAULT_HUMIDITY_HIGH_OFF  55.0f  // %RH — fan OFF
+#define DEFAULT_HUMIDITY_LOW       40.0f  // %RH — humidifier ON
+#define DEFAULT_HUMIDITY_LOW_OFF   45.0f  // %RH — humidifier OFF
+#define DEFAULT_TEMP_FAN_ON        24.0f  // °C  — temperature fan ON (hysteresis upper)
+#define DEFAULT_TEMP_FAN_OFF       23.0f  // °C  — temperature fan OFF (hysteresis lower)
+#define DEFAULT_GAS_DANGER_PCT     30.0f  // %   — alarm ON  (≈300 ppm)
+#define DEFAULT_GAS_DANGER_OFF_PCT 27.0f  // %   — alarm OFF (≈270 ppm, hysteresis)
+#define DEFAULT_TEMP_HIGH          26.0f  // °C  — warning only
 constexpr float TEMP_WINDOW_ON     = 24.0f;  // °C  — servo opens window
 
 // ADC full scale for MQ-2 percent conversion.

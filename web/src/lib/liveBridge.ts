@@ -84,6 +84,30 @@ class LiveBridge {
     return this.connected;
   }
 
+  /** Send a set-thresholds command to the backend over WebSocket. */
+  sendThresholds(payload: unknown): boolean {
+    const sock = this.socket;
+    if (!sock || sock.readyState !== WebSocket.OPEN) return false;
+    try {
+      sock.send(JSON.stringify({ type: 'set-thresholds', payload }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Send a device test command (test-led, test-buzzer) to the backend. */
+  sendCommand(cmd: string, deviceId?: string): boolean {
+    const sock = this.socket;
+    if (!sock || sock.readyState !== WebSocket.OPEN) return false;
+    try {
+      sock.send(JSON.stringify({ type: cmd, deviceId }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   subscribe(listener: ConnectionListener): () => void {
     this.listeners.add(listener);
     return () => {
@@ -228,6 +252,24 @@ export function connect(): void {
 
 export function disconnect(): void {
   bridge.disconnect();
+}
+
+/**
+ * Send updated thresholds to the backend. The backend will broadcast them
+ * to all WebSocket clients (including the bridge, which forwards them to
+ * the firmware over serial).
+ */
+export function sendThresholds(t: unknown): void {
+  bridge.sendThresholds(t);
+}
+
+/**
+ * Send a device test command (test-led, test-buzzer) to the backend.
+ * The backend broadcasts it to the bridge, which forwards it to the
+ * firmware over serial.
+ */
+export function sendCommand(cmd: string, deviceId?: string): boolean {
+  return bridge.sendCommand(cmd, deviceId);
 }
 
 export interface LiveStatus {

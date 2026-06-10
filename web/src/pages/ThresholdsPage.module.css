@@ -1,83 +1,303 @@
+/* ─── Page layout ────────────────────────────────────────────── */
+
 .page {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 36px;
+  padding-bottom: 48px;
 }
+
+/* ─── Header ─────────────────────────────────────────────────── */
 
 .head {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
+  flex-wrap: wrap;
 }
 
 .title {
   font-size: 36px;
-  line-height: 1.25;
+  line-height: 1.2;
   letter-spacing: -0.01em;
-  font-weight: 400;
+  font-weight: 500;
+  margin: 4px 0 0;
 }
 
 .lead {
   color: var(--text-secondary);
-  font-size: 15px;
-  margin-top: 6px;
-  max-width: 70ch;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 8px;
+  max-width: 62ch;
 }
 
-/* Groups */
-.groups {
+.connectionCard {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.group {
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 12px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
-  border-radius: 16px;
-  padding: 24px 32px 28px;
+  flex-shrink: 0;
 }
 
-.groupHeader {
+.connDot {
+  color: var(--brand-green);
+  font-size: 14px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.connDevice {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.connLoc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+/* ─── Card grid ──────────────────────────────────────────────── */
+
+.cards {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 4px;
+  gap: 24px;
 }
 
-.groupTitle {
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 18px;
+  padding: 28px 32px 24px;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.card:hover {
+  border-color: var(--border-strong, #444);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.cardIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.cardTitle {
   font-size: 17px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0;
 }
 
-.groupHint {
+.cardDesc {
   font-size: 13px;
   color: var(--text-muted);
-  line-height: 1.5;
+  margin: 2px 0 0;
 }
 
-.groupHint strong {
-  color: var(--text-secondary);
+.liveReading {
+  margin-left: auto;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.liveValue {
+  font-family: var(--font-mono);
+  font-size: 20px;
   font-weight: 600;
+  line-height: 1.2;
 }
 
-.colorSky   { color: var(--info);        font-weight: 500; }
-.colorGreen { color: var(--brand-green); font-weight: 500; }
+.liveLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 
-/* Actions bar */
+.statusOk     { color: var(--brand-green); }
+.statusWarn   { color: #f5a524; }
+.statusDanger { color: #ef4444; }
+
+/* ─── Bar area ───────────────────────────────────────────────── */
+
+.barArea {
+  padding: 4px 0 0;
+}
+
+/* ─── Legend ─────────────────────────────────────────────────── */
+
+.legend {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.legendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* ─── Footer / actions ───────────────────────────────────────── */
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .actions {
   display: flex;
-  gap: 12px;
   align-items: center;
-  padding: 4px 0 20px;
-  border-top: 1px solid var(--border-subtle);
+  gap: 12px;
 }
 
-.savedHint {
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btnPrimary {
+  background: var(--brand-green);
+  color: #0a0a0a;
+  border-color: var(--brand-green);
+}
+
+.btnPrimary:not(:disabled):hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(62, 207, 142, 0.25);
+}
+
+.btnSecondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+
+.btnSecondary:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-strong, #555);
+}
+
+.btnTest {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+
+.btnTest:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  border-color: var(--text-muted);
+}
+
+.btnTestActive {
+  background: var(--brand-green-glow);
+  color: var(--brand-green);
+  border-color: var(--brand-green-border);
+  animation: testPulse 600ms ease-in-out infinite;
+}
+
+@keyframes testPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+.testGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
+}
+
+.testLabel {
   font-family: var(--font-mono);
   font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.savedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--brand-green);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  animation: fadeIn 300ms ease;
+}
+
+.dirtyHint {
+  color: #f5a524;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  animation: fadeIn 200ms ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ─── Responsive ─────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .head { flex-direction: column; }
+
+  .title { font-size: 26px; }
+
+  .card { padding: 20px 18px 18px; }
+
+  .actions { flex-wrap: wrap; }
 }

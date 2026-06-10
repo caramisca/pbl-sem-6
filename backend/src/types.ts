@@ -110,4 +110,6 @@ export interface LiveStatus {
 export type ClientMessage =
   | { type: 'set-thresholds'; payload: Partial<Thresholds> }
   | { type: 'ping' }
-  | { type: 'ingest'; payload: PartialTelemetry };
+  | { type: 'ingest'; payload: PartialTelemetry }
+  | { type: 'test-led'; deviceId?: string }
+  | { type: 'test-buzzer'; deviceId?: string };

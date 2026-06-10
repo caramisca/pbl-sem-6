@@ -20,7 +20,7 @@ FLAGS
   --source <serial|demo>   data source (default: serial)
   --port <COM3|/dev/...>   serial device path (required for --source serial)
   --baud <number>          serial baud rate (default: 9600)
-  --backend <ws-url>       backend WebSocket URL (default: ws://localhost:14001/ws)
+  --backend <ws-url>       backend WebSocket URL (default: ws://localhost:4000/ws)
   --device <id>            fallback deviceId for malformed lines (default: rm-living)
   --help, -h               show this message
 
@@ -189,7 +189,35 @@ function main(): void {
     `[bridge] starting — source=${parsed.source} backend=${parsed.backend} device=${parsed.device}`,
   );
 
-  const ws = new WsClient(parsed.backend, logLine);
+  let demo: DemoSource | null = null;
+  let serial: SerialReader | null = null;
+
+  // When the backend broadcasts new thresholds, forward them to the
+  // firmware over serial so it can apply them at runtime.
+  const onThresholds = (payload: Record<string, unknown>): void => {
+    logLine(`[bridge] received thresholds from backend`);
+    if (serial) {
+      const cmd = JSON.stringify({ cmd: 'set-thresholds', ...payload }) + '\n';
+      const ok = serial.write(cmd);
+      logLine(`[bridge] → serial: ${ok ? 'sent' : 'FAILED (port not open)'}`);
+    } else if (demo) {
+      logLine(`[bridge] thresholds ignored — demo source has no firmware`);
+    }
+  };
+
+  const onCommand = (payload: Record<string, unknown>): void => {
+    const cmd = typeof payload.cmd === 'string' ? payload.cmd : JSON.stringify(payload);
+    logLine(`[bridge] received command from backend: ${cmd}`);
+    if (serial) {
+      const line = JSON.stringify(payload) + '\n';
+      const ok = serial.write(line);
+      logLine(`[bridge] → serial cmd: ${ok ? 'sent' : 'FAILED (port not open)'}`);
+    } else if (demo) {
+      logLine(`[bridge] command ignored — demo source has no firmware`);
+    }
+  };
+
+  const ws = new WsClient(parsed.backend, logLine, onThresholds, onCommand);
   ws.start();
 
   const handleLine = (line: string): void => {
@@ -208,9 +236,6 @@ function main(): void {
     }
   };
 
-  let demo: DemoSource | null = null;
-  let serial: SerialReader | null = null;
-
   if (parsed.source === 'demo') {
     demo = new DemoSource({ deviceId: parsed.device, onLine: handleLine });
     demo.start();
@@ -227,6 +252,9 @@ function main(): void {
       baud: parsed.baud,
       onLine: handleLine,
       onLog: logLine,
+      onAck: (line: string) => {
+        logLine(`[bridge] firmware ACK: ${line}`);
+      },
     });
     serial.start();
   }

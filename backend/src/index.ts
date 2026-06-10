@@ -145,6 +145,14 @@ wss.on('connection', (socket, req) => {
       const next = store.updateThresholds(safe);
       sendJson(socket, envelope('thresholds-ack', next));
       log('info', 'thresholds updated via ws', safe);
+    } else if (parsed.type === 'test-led' || parsed.type === 'test-buzzer') {
+      const deviceId = typeof parsed.deviceId === 'string' && parsed.deviceId.length > 0
+        ? parsed.deviceId
+        : 'rm-living';
+      const cmdPayload = { cmd: parsed.type, deviceId };
+      broadcast(envelope('roommanager/command', cmdPayload));
+      sendJson(socket, envelope('command-ack', { ...cmdPayload, status: 'sent' }));
+      log('info', `command ${parsed.type} relayed`, { deviceId });
     } else if (parsed.type === 'ping') {
       sendJson(socket, envelope('pong', { ts: ts() }));
     } else if (parsed.type === 'ingest') {
