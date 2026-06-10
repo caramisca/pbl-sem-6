@@ -43,8 +43,10 @@ constexpr float HUMIDITY_HIGH      = 60.0f;  // %RH — fan ON
 constexpr float HUMIDITY_HIGH_OFF  = 55.0f;  // %RH — fan OFF
 constexpr float HUMIDITY_LOW       = 40.0f;  // %RH — humidifier ON
 constexpr float HUMIDITY_LOW_OFF   = 45.0f;  // %RH — humidifier OFF
-constexpr float GAS_DANGER_PCT     = 30.0f;  // %   — alarm ON  (~300 ppm equiv)
-constexpr float GAS_DANGER_OFF_PCT = 27.0f;  // %   — alarm OFF (~270 ppm equiv)
+constexpr float TEMP_FAN_ON        = 24.0f;  // °C  — temperature fan ON (hysteresis upper)
+constexpr float TEMP_FAN_OFF       = 23.0f;  // °C  — temperature fan OFF (hysteresis lower)
+constexpr float GAS_DANGER_PCT     = 10.0f;  // %   — alarm ON  (~20%)
+constexpr float GAS_DANGER_OFF_PCT = 9.0f;  // %   — alarm OFF (hysteresis)
 constexpr float TEMP_HIGH          = 26.0f;  // °C  — warning only
 constexpr float TEMP_WINDOW_ON     = 24.0f;  // °C  — servo opens window
 
@@ -58,7 +60,7 @@ constexpr float GAS_EMA_ALPHA      = 0.20f;
 // ---- Timing ---------------------------------------------------------
 constexpr unsigned long SAMPLE_INTERVAL_MS = 2000; // sensor poll
 constexpr unsigned long BUZZER_PULSE_MS    = 500;  // alarm beep cadence
-constexpr int           BUZZER_FREQ_HZ     = 2200;
+constexpr int           BUZZER_FREQ_HZ     = 1000; // lower frequency for less shrill tone
 
 // ---- Identity -------------------------------------------------------
 #define DEVICE_ID  "rm-living"

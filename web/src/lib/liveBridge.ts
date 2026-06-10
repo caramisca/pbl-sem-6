@@ -6,7 +6,7 @@ import { telemetryStore } from './mockTelemetry';
 /**
  * WebSocket bridge between the in-app store and the backend's live feed.
  *
- * The backend re-broadcasts MQTT-style envelopes on `ws://localhost:14001/ws`:
+ * The backend re-broadcasts MQTT-style envelopes on `ws://localhost:4000/ws`:
  *   { topic: string, payload: any, ts: string }
  *
  * Topics handled here:
@@ -37,7 +37,8 @@ type LivePayload = {
 interface WelcomePayload {
   devices?: unknown;
   thresholds?: unknown;
-  latest?: Record<string, Telemetry>;
+  telemetry?: Record<string, unknown>;
+  latest?: Record<string, unknown>;
 }
 
 type ConnectionListener = (connected: boolean) => void;
@@ -57,8 +58,8 @@ class LiveBridge {
   }
 
   connect(): void {
-    if (this.socket || this.stopped) return;
     this.stopped = false;
+    if (this.socket) return;
     this.openSocket();
   }
 
@@ -139,8 +140,10 @@ class LiveBridge {
 
     if (envelope.topic === 'welcome') {
       const payload = envelope.payload as WelcomePayload | undefined;
-      if (payload && payload.latest && typeof payload.latest === 'object') {
-        Object.values(payload.latest).forEach((reading) => {
+      // Backend sends the key as `telemetry`; fall back to `latest` for compat.
+      const latestMap = (payload?.telemetry ?? payload?.latest) as Record<string, unknown> | undefined;
+      if (latestMap && typeof latestMap === 'object') {
+        Object.values(latestMap).forEach((reading) => {
           if (isTelemetry(reading)) {
             telemetryStore.applyLiveTelemetry(reading);
           }
@@ -210,7 +213,7 @@ function isTelemetry(value: unknown): value is Telemetry {
   );
 }
 
-const DEFAULT_URL = 'ws://localhost:14001/ws';
+const DEFAULT_URL = 'ws://localhost:4000/ws';
 
 function resolveUrl(): string {
   const envUrl = (import.meta.env.VITE_BRIDGE_URL as string | undefined) ?? undefined;

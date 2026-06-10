@@ -27,7 +27,7 @@ FLAGS
 EXAMPLES
   tsx src/index.ts --source demo --device rm-living
   tsx src/index.ts --source serial --port COM3 --baud 9600
-  tsx src/index.ts --source serial --port /dev/ttyUSB0 --backend ws://10.0.0.5:14001/ws
+  tsx src/index.ts --source serial --port /dev/ttyUSB0 --backend ws://10.0.0.5:4000/ws
 `;
 
 function printHelp(): void {
@@ -40,7 +40,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs | { error: string } {
     source: 'serial',
     port: undefined,
     baud: 9600,
-    backend: 'ws://localhost:14001/ws',
+    backend: 'ws://localhost:4000/ws',
     device: 'rm-living',
     help: false,
   };

@@ -217,8 +217,8 @@ function resolveUrl(): string {
   // Android emulator routes to the host machine via 10.0.2.2; iOS / web /
   // physical devices on Wi-Fi can hit localhost from the dev machine. The
   // user can override either with EXPO_PUBLIC_BRIDGE_URL.
-  if (Platform.OS === 'android') return 'ws://10.0.2.2:14001/ws';
-  return 'ws://localhost:14001/ws';
+  if (Platform.OS === 'android') return 'ws://10.0.2.2:4000/ws';
+  return 'ws://localhost:4000/ws';
 }
 
 const bridge = new LiveBridge(resolveUrl());
