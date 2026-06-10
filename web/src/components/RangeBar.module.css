@@ -1,0 +1,155 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  user-select: none;
+}
+
+/* Extra margin top/bottom so handles that extend outside the track don't clip */
+.trackWrap {
+  position: relative;
+  margin: 36px 0 28px;
+  height: 40px;
+}
+
+.track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-elevated, #1e1e1e);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+/* ─── Coloured band fills ──────────────────────────────────────── */
+.band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* ─── Live reading marker ──────────────────────────────────────── */
+.reading {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.45);
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.readingBadge {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted, #888);
+  white-space: nowrap;
+  background: var(--bg-surface, #141414);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+/* ─── Draggable handle ─────────────────────────────────────────── */
+.handle {
+  position: absolute;
+  top: -36px;     /* extend above track for badge */
+  bottom: -28px;  /* extend below track for label */
+  width: 36px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: ew-resize;
+  z-index: 10;
+  touch-action: none;
+}
+
+.handle.dragging {
+  z-index: 20;
+}
+
+/* Value badge above track */
+.badge {
+  position: absolute;
+  top: 0;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transform: translateX(-50%);
+  left: 50%;
+  border: 1px solid transparent;
+}
+
+.badge-green { background: rgba(62,207,142,0.15); color: #3ecf8e; border-color: rgba(62,207,142,0.3); }
+.badge-amber { background: rgba(245,165,36,0.15); color: #f5a524; border-color: rgba(245,165,36,0.3); }
+.badge-red   { background: rgba(239,68,68,0.15);  color: #ef4444; border-color: rgba(239,68,68,0.3); }
+.badge-sky   { background: rgba(91,139,247,0.15); color: #5b8bf7; border-color: rgba(91,139,247,0.3); }
+
+/* Vertical stem line */
+.stem {
+  position: absolute;
+  top: 26px;      /* below badge */
+  bottom: 20px;   /* above label */
+  width: 2px;
+  border-radius: 1px;
+}
+
+.stem-green { background: #3ecf8e; }
+.stem-amber { background: #f5a524; }
+.stem-red   { background: #ef4444; }
+.stem-sky   { background: #5b8bf7; }
+
+/* Circular thumb centered in the 40px track */
+.thumb {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, calc(-50% + 18px)); /* offset 18px = half track height from top:-36px */
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-surface, #141414);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.15);
+  transition: transform 0.1s ease;
+}
+
+.handle:hover .thumb,
+.handle.dragging .thumb {
+  transform: translate(-50%, calc(-50% + 18px)) scale(1.25);
+}
+
+.thumb-green { background: #3ecf8e; }
+.thumb-amber { background: #f5a524; }
+.thumb-red   { background: #ef4444; }
+.thumb-sky   { background: #5b8bf7; }
+
+/* Label below track */
+.lbl {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+
+/* ─── Axis labels ──────────────────────────────────────────────── */
+.axisLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted, #888);
+}

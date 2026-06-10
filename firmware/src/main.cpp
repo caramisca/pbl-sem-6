@@ -60,7 +60,7 @@
 // (Timer 2) or the Wire/Adafruit stack.
 #define PIN_WINDOW       10
 constexpr int WINDOW_CLOSED_DEG = 0;
-constexpr int WINDOW_OPEN_DEG   = 90;
+constexpr int WINDOW_OPEN_DEG   = 90;  // limit travel to a 90-degree sweep
 
 // I²C bus for the 16x2 LCD uses the Mega's hardware TWI pins:
 // SDA = 20, SCL = 21 (no manual definition needed — Wire library
@@ -72,8 +72,10 @@ constexpr float HUMIDITY_HIGH      = 60.0f;  // %RH — fan ON
 constexpr float HUMIDITY_HIGH_OFF  = 55.0f;  // %RH — fan OFF
 constexpr float HUMIDITY_LOW       = 40.0f;  // %RH — humidifier ON
 constexpr float HUMIDITY_LOW_OFF   = 45.0f;  // %RH — humidifier OFF
-constexpr float GAS_DANGER_PCT     = 30.0f;  // %   — alarm ON  (~300 ppm equiv)
-constexpr float GAS_DANGER_OFF_PCT = 27.0f;  // %   — alarm OFF (~270 ppm equiv)
+constexpr float TEMP_FAN_ON        = 24.0f;  // °C  — temperature fan ON (hysteresis upper)
+constexpr float TEMP_FAN_OFF       = 23.0f;  // °C  — temperature fan OFF (hysteresis lower)
+constexpr float GAS_DANGER_PCT     = 20.0f;  // %   — alarm ON  (~20%)
+constexpr float GAS_DANGER_OFF_PCT = 19.0f;  // %   — alarm OFF (hysteresis)
 constexpr float TEMP_HIGH          = 26.0f;  // °C  — warning only
 constexpr float TEMP_WINDOW_ON     = 24.0f;  // °C  — servo opens window
 
@@ -87,7 +89,7 @@ constexpr float GAS_EMA_ALPHA      = 0.20f;
 // ---- Timing ---------------------------------------------------------
 constexpr unsigned long SAMPLE_INTERVAL_MS = 2000; // sensor poll
 constexpr unsigned long BUZZER_PULSE_MS    = 500;  // alarm beep cadence
-constexpr int           BUZZER_FREQ_HZ     = 2200;
+constexpr int           BUZZER_FREQ_HZ     = 1000; // lower frequency for less shrill tone
 
 // ---- Identity -------------------------------------------------------
 #define DEVICE_ID  "rm-living"
@@ -130,10 +132,8 @@ bool          buzzerActive       = false;
 float lastValidHumidity = 50.0f;
 float lastValidTemp     = 22.0f;
 
-// MQ-2 needs ~60 s heater warm-up before readings are reliable.
-// During warm-up the gas alarm is suppressed and LCD shows "WARM".
-constexpr unsigned long GAS_WARMUP_MS = 60000UL;
-bool gasReady = false;
+// MQ-2 readings are used immediately on real hardware.
+bool gasReady = true;
 int  gasRawAdc = 0; // stored for JSON diagnostics
 
 // =====================================================================
@@ -160,37 +160,37 @@ void readDht() {
 }
 
 void readGas(unsigned long now) {
+  (void)now;
   gasRawAdc = analogRead(PIN_GAS); // 0..1023 on AVR 10-bit ADC
   const float sample = (float)gasRawAdc * 100.0f / ADC_FULL_SCALE; // → 0.0–100.0 %
   // Exponential moving average to suppress sensor noise / cross-sensitivity.
   if (state.gasEma == 0.0f) state.gasEma = sample;
   state.gasEma = GAS_EMA_ALPHA * sample + (1.0f - GAS_EMA_ALPHA) * state.gasEma;
   state.gasPct = state.gasEma;
-  if (!gasReady && now >= GAS_WARMUP_MS) gasReady = true;
 }
 
 // =====================================================================
 // DECIDE — hysteresis-based control logic (matches report §2.0.1.4)
 // =====================================================================
 void applyHysteresis() {
-  // Fan
-  if (!state.fanOn && state.humidity > HUMIDITY_HIGH)               state.fanOn = true;
+  // Fan — humidity-based
+  if (!state.fanOn && state.humidity >= HUMIDITY_HIGH)              state.fanOn = true;
   else if ( state.fanOn && state.humidity < HUMIDITY_HIGH_OFF)      state.fanOn = false;
 
+  // Fan — temperature-based (hysteresis: ON at >24°C, OFF at <23°C)
+  if (!state.fanOn && state.temperature > TEMP_FAN_ON)              state.fanOn = true;
+  else if ( state.fanOn && state.temperature < TEMP_FAN_OFF)        state.fanOn = false;
+
   // Humidifier
-  if (!state.humidifierOn && state.humidity < HUMIDITY_LOW)         state.humidifierOn = true;
+  if (!state.humidifierOn && state.humidity <= HUMIDITY_LOW)        state.humidifierOn = true;
   else if ( state.humidifierOn && state.humidity > HUMIDITY_LOW_OFF) state.humidifierOn = false;
 
   // Mutual exclusion guard — fan wins (mold/safety > comfort).
   if (state.fanOn && state.humidifierOn) state.humidifierOn = false;
 
-  // Gas alarm — only after warm-up period.
-  if (gasReady) {
-    if (!state.alarmOn && state.gasPct > GAS_DANGER_PCT)            state.alarmOn = true;
-    else if ( state.alarmOn && state.gasPct < GAS_DANGER_OFF_PCT)   state.alarmOn = false;
-  } else {
-    state.alarmOn = false; // never alarm during warm-up
-  }
+  // Gas alarm — triggers buzzer
+  if (!state.alarmOn && state.gasPct >= GAS_DANGER_PCT)             state.alarmOn = true;
+  else if ( state.alarmOn && state.gasPct < GAS_DANGER_OFF_PCT)     state.alarmOn = false;
 
   // Force-vent on alarm: get the air moving regardless of RH.
   if (state.alarmOn) state.fanOn = true;
@@ -205,15 +205,25 @@ void applyHysteresis() {
 void driveActuators(unsigned long now) {
   digitalWrite(PIN_FAN,        state.fanOn        ? HIGH : LOW);
   digitalWrite(PIN_HUMIDIFIER, state.humidifierOn ? HIGH : LOW);
-  windowServo.write(state.windowOpen ? WINDOW_OPEN_DEG : WINDOW_CLOSED_DEG);
+  {
+    const int windowAngle = state.windowOpen ? WINDOW_OPEN_DEG : WINDOW_CLOSED_DEG;
+    windowServo.write(constrain(windowAngle, WINDOW_CLOSED_DEG, WINDOW_OPEN_DEG));
+  }
 
-  // Buzzer — pulse 50% duty at ~1 Hz while the alarm latch is set.
+  // Buzzer — pulse with melodic "singing" pattern while the alarm latch is set.
   if (state.alarmOn) {
     if (now - lastBuzzerToggleAt > BUZZER_PULSE_MS) {
       lastBuzzerToggleAt = now;
       buzzerActive = !buzzerActive;
-      if (buzzerActive) tone(PIN_BUZZER, BUZZER_FREQ_HZ);
-      else              noTone(PIN_BUZZER);
+      if (buzzerActive) {
+        // Melodic rising tone pattern for "singing" effect
+        int pitchVariation = (now / 200) % 4; // 4-step pitch pattern
+        int basePitch = BUZZER_FREQ_HZ;
+        int pitches[] = {basePitch, basePitch + 200, basePitch + 400, basePitch + 300};
+        tone(PIN_BUZZER, pitches[pitchVariation]);
+      } else {
+        noTone(PIN_BUZZER);
+      }
     }
   } else if (buzzerActive) {
     buzzerActive = false;
@@ -241,13 +251,9 @@ void renderDisplay() {
   lcd.print(F(" H:"));
   lcd.print((int)state.humidity);
   lcd.print(F(" G:"));
-  if (!gasReady) {
-    lcd.print(F("WARM"));
-  } else {
-    lcd.print((int)state.gasPct);
-    lcd.print('%');
-    lcd.print(F("  ")); // pad
-  }
+  lcd.print((int)state.gasPct);
+  lcd.print('%');
+  lcd.print(F("  ")); // pad
 
   // Row 1 — actuator state, single-digit booleans + DHT-fault marker.
   lcd.setCursor(0, 1);
@@ -280,7 +286,26 @@ void setup() {
   digitalWrite(PIN_FAN, LOW);
   digitalWrite(PIN_HUMIDIFIER, LOW);
 
-  // Window servo — start closed.
+  // --- PIN 5/6 DIAGNOSTIC ---
+  Serial.println(F("--- PIN 5/6 diagnostic ---"));
+  pinMode(PIN_HUMIDIFIER, OUTPUT);
+  digitalWrite(PIN_HUMIDIFIER, HIGH); delay(10);
+  Serial.print(F("  pin 5 HIGH -> digitalRead=")); Serial.println(digitalRead(PIN_HUMIDIFIER));
+  digitalWrite(PIN_HUMIDIFIER, LOW);  delay(10);
+  Serial.print(F("  pin 5 LOW  -> digitalRead=")); Serial.println(digitalRead(PIN_HUMIDIFIER));
+  pinMode(PIN_FAN, OUTPUT);
+  digitalWrite(PIN_FAN, HIGH); delay(10);
+  Serial.print(F("  pin 6 HIGH -> digitalRead=")); Serial.println(digitalRead(PIN_FAN));
+  digitalWrite(PIN_FAN, LOW);  delay(10);
+  Serial.print(F("  pin 6 LOW  -> digitalRead=")); Serial.println(digitalRead(PIN_FAN));
+  // Raw register write: pin5=PE3, pin6=PH3
+  DDRE |= (1<<3); PORTE |= (1<<3);
+  DDRH |= (1<<3); PORTH |= (1<<3);
+  Serial.println(F("  raw PORT write -> both HIGH for 3s, check LEDs NOW"));
+  delay(3000);
+  PORTE &= ~(1<<3);
+  PORTH &= ~(1<<3);
+  // Window servo � start closed.
   windowServo.attach(PIN_WINDOW);
   windowServo.write(WINDOW_CLOSED_DEG);
 
@@ -299,7 +324,9 @@ void setup() {
   delay(1500); // DHT11 needs >1 s after power-on before first read
 
   // --- Startup DHT probe (5 attempts, prints each result) -----------
-  Serial.println(F("--- DHT11 probe (data wire -> pin 22) ---"));
+  Serial.print(F("--- DHT11 probe (data wire -> pin "));
+  Serial.print(PIN_DHT);
+  Serial.println(F(") ---"));
 
   // Check DATA line at rest — must be HIGH.
   pinMode(PIN_DHT, INPUT_PULLUP);

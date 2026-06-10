@@ -59,7 +59,7 @@
 // (Timer 2) or the Wire/Adafruit stack.
 #define PIN_WINDOW       10
 constexpr int WINDOW_CLOSED_DEG = 0;
-constexpr int WINDOW_OPEN_DEG   = 90;
+constexpr int WINDOW_OPEN_DEG   = 90;  // limit travel to a 90-degree sweep
 
 // I²C bus for the 16x2 LCD uses the Mega's hardware TWI pins:
 // SDA = 20, SCL = 21 (no manual definition needed — Wire library
@@ -71,8 +71,10 @@ constexpr float HUMIDITY_HIGH      = 60.0f;  // %RH — fan ON
 constexpr float HUMIDITY_HIGH_OFF  = 55.0f;  // %RH — fan OFF
 constexpr float HUMIDITY_LOW       = 40.0f;  // %RH — humidifier ON
 constexpr float HUMIDITY_LOW_OFF   = 45.0f;  // %RH — humidifier OFF
-constexpr int   GAS_DANGER_PPM     = 300;    // ppm — alarm ON
-constexpr int   GAS_DANGER_OFF_PPM = 270;    // ppm — alarm OFF (~10% below)
+constexpr float TEMP_FAN_ON        = 24.0f;  // °C  — temperature fan ON (hysteresis upper)
+constexpr float TEMP_FAN_OFF       = 23.0f;  // °C  — temperature fan OFF (hysteresis lower)
+constexpr int   GAS_DANGER_PPM     = 100;    // ppm — alarm ON (~10%)
+constexpr int   GAS_DANGER_OFF_PPM = 90;     // ppm — alarm OFF (hysteresis)
 constexpr float TEMP_HIGH          = 26.0f;  // °C  — warning only
 
 // MQ-2 analog → ppm scaling for the simulator. The real sensor is
@@ -162,9 +164,13 @@ void readGas() {
 // DECIDE — hysteresis-based control logic (matches report §2.0.1.4)
 // =====================================================================
 void applyHysteresis() {
-  // Fan
+  // Fan — humidity-based control
   if (!state.fanOn && state.humidity > HUMIDITY_HIGH)               state.fanOn = true;
   else if ( state.fanOn && state.humidity < HUMIDITY_HIGH_OFF)      state.fanOn = false;
+
+  // Fan — temperature-based control (hysteresis: ON at >24°C, OFF at <23°C)
+  if (!state.fanOn && state.temperature > TEMP_FAN_ON)              state.fanOn = true;
+  else if ( state.fanOn && state.temperature < TEMP_FAN_OFF)        state.fanOn = false;
 
   // Humidifier
   if (!state.humidifierOn && state.humidity < HUMIDITY_LOW)         state.humidifierOn = true;
@@ -173,7 +179,7 @@ void applyHysteresis() {
   // Mutual exclusion guard — fan wins (mold/safety > comfort).
   if (state.fanOn && state.humidifierOn) state.humidifierOn = false;
 
-  // Gas alarm
+  // Gas alarm — triggers buzzer
   if (!state.alarmOn && state.gasPpm > GAS_DANGER_PPM)              state.alarmOn = true;
   else if ( state.alarmOn && state.gasPpm < GAS_DANGER_OFF_PPM)     state.alarmOn = false;
 
@@ -191,15 +197,25 @@ void applyHysteresis() {
 void driveActuators(unsigned long now) {
   digitalWrite(PIN_FAN,        state.fanOn        ? HIGH : LOW);
   digitalWrite(PIN_HUMIDIFIER, state.humidifierOn ? HIGH : LOW);
-  windowServo.write(state.windowOpen ? WINDOW_OPEN_DEG : WINDOW_CLOSED_DEG);
+  {
+    const int windowAngle = state.windowOpen ? WINDOW_OPEN_DEG : WINDOW_CLOSED_DEG;
+    windowServo.write(constrain(windowAngle, WINDOW_CLOSED_DEG, WINDOW_OPEN_DEG));
+  }
 
-  // Buzzer — pulse 50% duty at ~1 Hz while the alarm latch is set.
+  // Buzzer — melodic "singing" pattern while the alarm latch is set
   if (state.alarmOn) {
     if (now - lastBuzzerToggleAt > BUZZER_PULSE_MS) {
       lastBuzzerToggleAt = now;
       buzzerActive = !buzzerActive;
-      if (buzzerActive) tone(PIN_BUZZER, BUZZER_FREQ_HZ);
-      else              noTone(PIN_BUZZER);
+      if (buzzerActive) {
+        // Melodic rising tone pattern for "singing" effect — creates a pleasant alarm
+        int pitchVariation = (now / 200) % 4; // 4-step pitch pattern cycling every 800ms
+        int basePitch = BUZZER_FREQ_HZ;
+        int pitches[] = {basePitch, basePitch + 200, basePitch + 400, basePitch + 300};
+        tone(PIN_BUZZER, pitches[pitchVariation]);
+      } else {
+        noTone(PIN_BUZZER);
+      }
     }
   } else if (buzzerActive) {
     buzzerActive = false;

@@ -6,7 +6,7 @@ import { telemetryStore } from './mockTelemetry';
 /**
  * WebSocket bridge between the in-app store and the backend's live feed.
  *
- * The backend re-broadcasts MQTT-style envelopes on `ws://localhost:14001/ws`:
+ * The backend re-broadcasts MQTT-style envelopes on `ws://localhost:4000/ws`:
  *   { topic: string, payload: any, ts: string }
  *
  * Topics handled here:
@@ -213,7 +213,7 @@ function isTelemetry(value: unknown): value is Telemetry {
   );
 }
 
-const DEFAULT_URL = 'ws://localhost:14001/ws';
+const DEFAULT_URL = 'ws://localhost:4000/ws';
 
 function resolveUrl(): string {
   const envUrl = (import.meta.env.VITE_BRIDGE_URL as string | undefined) ?? undefined;
